@@ -9,19 +9,19 @@ This version attempts to bypass the lack of GSM connectivity at the sensor locat
 ## Hardware
 
 * Sensor end:
-** Arduino MKR1000
-*** HC-12 module
-*** 100uF capacitor
+  * Arduino MKR1000
+    * HC-12 module
+    * 100uF capacitor
 * Send to cloud end:
-** Arduino MKR Wifi1010
-*** HC-12 module
-*** DS18B20 waterproof temperature probe
-*** One 4.7kOhm resistor
-*** 100uF capacitor
+  * Arduino MKR Wifi1010
+    * HC-12 module
+    * DS18B20 waterproof temperature probe
+    * One 4.7kOhm resistor
+    * 100uF capacitor
 * Each end:
-** Breadboard or other circuit
-** Jump wires
-** Power source
+  * Breadboard or other circuit
+  * Jump wires
+  * Power source
 
 ### Set up installation
 
@@ -43,8 +43,8 @@ This version attempts to bypass the lack of GSM connectivity at the sensor locat
 1. Set up your project on RESTDB.io, make a note of your API key and project name/server name
   1. Code expects RESTDB collection to be called "temperatures"
 1. Install libraries (see below)
-1. Define Wifi SSID and Password, RESTDB.io API key and RESTDB.io server name (project name) in secrets.h
-1. Adjust timeouts as needed: SEND_WAIT and SAMPLE_WAIT
+1. Define Wifi SSID and Password, RESTDB.io API key and RESTDB.io server name (project name) in secrets.h (in `rcv-from-hc12-fwd-to-restdb/` folder)
+1. Adjust timeout `SEND_WAIT` as needed in either sketch
 1. Adjust collection name in `client.post("/rest/temperatures");` if needed
 
 ### Code modifications
