@@ -15,8 +15,6 @@
 #include <Arduino_JSON.h>
 #include "TimeLib.h"
 #include <Adafruit_SleepyDog.h>
-#include <OneWire.h>
-#include <DallasTemperature.h>
 
 #include "secrets.h"
 // Please enter your sensitive data in secrets.h

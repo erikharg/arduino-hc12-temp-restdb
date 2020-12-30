@@ -12,14 +12,14 @@ This version attempts to bypass the lack of GSM connectivity at the sensor locat
 ** Arduino MKR1000
 *** HC-12 module
 *** 100uF capacitor
-*** DS18B20 waterproof temperature probe
 * Send to cloud end:
 ** Arduino MKR Wifi1010
 *** HC-12 module
+*** DS18B20 waterproof temperature probe
+*** One 4.7kOhm resistor
 *** 100uF capacitor
 * Each end:
 ** Breadboard or other circuit
-** One 4.7kOhm resistor
 ** Jump wires
 ** Power source
 
@@ -51,13 +51,15 @@ This version attempts to bypass the lack of GSM connectivity at the sensor locat
 * You may need to change the `Serial1` pin assignments if you're using a board with a different serial port hardware.
 
 ### Required libraries
-* *TODO: Additional libs?*
+* Adafruit_SleepyDog_Library
 * ArduinoHttpClient
 * Arduino_JSON
-* Time
-* Adafruit_SleepyDog_Library
-* OneWire
 * DallasTemperature
+* OneWire
+* SPI
+* Time
+* WiFi101
+* WiFiUDP
 
 ### Library modifications
 * You may need to move `libraries/Time/Time.h` to another file name to not conflict with `<time.h>`. I renamed it to `_Time.h` and included `"TimeLib.h"` in my project instead of `<Time.h>`, to get it to compile on my Mac.
