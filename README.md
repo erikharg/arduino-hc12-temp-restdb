@@ -4,7 +4,7 @@ Arduino project to monitor temperature with a DS18B20 probe and send the results
 ## Goal
 The goal was to use the waterproof temperature sensor to measure sea water temperature and report this to a permanent record in a robust fashion, to be used for a simple web service and dashboard.
 
-This version attempts to bypass the lack of GSM connectivity at the sensor location, by relaying measurements via HC-12 to a secondary Arduino that is Wifi connected to the internet.
+This version attempts to bypass the lack of GSM connectivity at the sensor location, by relaying measurements via HC-12 to a secondary Arduino that is Wifi connected to the internet. The GSM-connected version is available in repository [arduino-temp-to-restdb](https://github.com/erikharg/arduino-temp-to-restdb).
 
 ## Hardware
 
