@@ -52,7 +52,9 @@ void setup()
     Serial.print(countdownMS, DEC);
     Serial.println(" milliseconds!");
     sensors.begin();
-    
+
+    hc12config();
+
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, HIGH);
 }
@@ -101,42 +103,91 @@ void sendDataNow()
         Serial.println(sendString);
         Serial1.write(sendString.c_str()); // Send over HC-12 (Serial1)
         Serial.println("Sent, waiting for reply...");
-    }
-    Watchdog.reset();
+
+        Watchdog.reset();
+        
+        delay(500); // wait for HC-12 to reply
     
-    delay(2500); // wait for HC-12 to reply
-
-    // read data back from HC-12
-    Watchdog.reset();
-    readBuffer = "";
-    if (Serial1.available())
-    {
-        Serial.println("Got UART data from HC-12");
+        // read data back from HC-12
         Watchdog.reset();
-        while (Serial1.available())
+        time_t looptime = now() + (time_t)10;
+        while(!Serial1.available() && now() < looptime) 
         {
-            int msg = Serial1.read();
-            readBuffer += (char)msg;
-            //Serial.write(msg);
+          Serial.println("now:" + formatDateTime(now()) + ", looptime:" + formatDateTime(looptime));
+          delay(500);
         }
         Watchdog.reset();
-        Serial.print("Received:");
-        Serial.print(readBuffer + "\n");
-        if (readBuffer.startsWith("ACK"))
+        readBuffer = "";
+        if (Serial1.available())
         {
-            Serial.println("Got response message:");  
-            Serial.println(readBuffer);
-            Serial.println("End of message");
-        } else {
-            Serial.println("Got unsupported message:");
-            Serial.println(readBuffer);
-            Serial.println("End of message");
+            Serial.println("Got UART data from HC-12");
+            Watchdog.reset();
+            while (Serial1.available())
+            {
+                int msg = Serial1.read();
+                readBuffer += (char)msg;
+                //Serial.write(msg);
+            }
+            Watchdog.reset();
+            Serial.print("Received:");
+            Serial.print(readBuffer + "\n");
+            if (readBuffer.startsWith("ACK"))
+            {
+                Serial.println("Got response message:");  
+                Serial.println(readBuffer);
+                Serial.println("End of message");
+            } else {
+                Serial.println("Got unsupported message:");
+                Serial.println(readBuffer);
+                Serial.println("End of message");
+            }
+            Watchdog.reset();
         }
-        Watchdog.reset();
+    
+        sendData = now() + SEND_WAIT; // wait this long until we send data again
+        Serial.println("Waiting until " + formatDateTime(sendData) + " to send data again");
     }
+}
 
-    sendData = now() + SEND_WAIT; // wait this long until we send data again
-    Serial.println("Waiting until " + formatDateTime(sendData) + " to send data again");
+void hc12config()
+{
+    pinMode(HC12_SET_PIN, OUTPUT);
+    Serial.println("HC-12 config:");
+    digitalWrite(HC12_SET_PIN, LOW);
+    delay(100);
+    Serial1.print("AT+DEFAULT");
+    delay(100);
+    Serial1.print("AT+V");
+    delay(100);
+    while(Serial1.available()) {
+      Serial.write(Serial1.read());
+    }
+    Serial1.print("AT+RB");
+    delay(100);
+    while(Serial1.available()) {
+      Serial.write(Serial1.read());
+    }
+    Serial1.print("AT+RC");
+    delay(100);
+    while(Serial1.available()) {
+      Serial.write(Serial1.read());
+    }
+    Serial1.print("AT+RF");
+    delay(100);
+    while(Serial1.available()) {
+      Serial.write(Serial1.read());
+    }
+    Serial1.print("AT+RP");
+    delay(100);
+    while(Serial1.available()) {
+      Serial.write(Serial1.read());
+    }
+    
+    digitalWrite(HC12_SET_PIN, HIGH);
+    
+    Serial.write("\n");
+    Serial.println("Setup complete!\n=== STARTING LOOP ===");
+
 }
 
 float getTemp()

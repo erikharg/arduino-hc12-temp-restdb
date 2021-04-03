@@ -43,6 +43,8 @@ String errortext = "ERROR";
 
 // HC-12 Communications initialize variables
 String readBuffer = "";
+int setPin = 1;
+
 
 // Timekeeping
 unsigned int localNTPPort = 2359;
@@ -74,6 +76,8 @@ void setup()
     Serial.print(countdownMS, DEC);
     Serial.println(" milliseconds!");
 
+    hc12config();
+
     Serial.println("Testing connection with Wifi");
     Watchdog.reset();
     while (status != WL_CONNECTED)
@@ -92,6 +96,7 @@ void setup()
 
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, HIGH);
+
 }
 
 void loop()
@@ -308,6 +313,44 @@ void updateTimeKeeper()
         Serial.println("Time pre-Wifi:" + String((unsigned long)pre));
         Serial.println("Time postWifi:" + String((unsigned long)pst));
     }
+}
+
+void hc12config()
+{
+    pinMode(setPin, OUTPUT);
+    Serial.println("HC-12 config:");
+    digitalWrite(setPin, LOW);
+    delay(100);
+    Serial1.print("AT+DEFAULT");
+    delay(100);
+    Serial1.print("AT+V");
+    delay(100);
+    while(Serial1.available()) {
+      Serial.write(Serial1.read());
+    }
+    Serial1.print("AT+RB");
+    delay(100);
+    while(Serial1.available()) {
+      Serial.write(Serial1.read());
+    }
+    Serial1.print("AT+RC");
+    delay(100);
+    while(Serial1.available()) {
+      Serial.write(Serial1.read());
+    }
+    Serial1.print("AT+RF");
+    delay(100);
+    while(Serial1.available()) {
+      Serial.write(Serial1.read());
+    }
+    Serial1.print("AT+RP");
+    delay(100);
+    while(Serial1.available()) {
+      Serial.write(Serial1.read());
+    }
+    digitalWrite(setPin, HIGH);
+    Serial.write("\n");
+    Serial.println("Setup complete!\n=== STARTING LOOP ===");
 }
 
 void printWifiStatus()
