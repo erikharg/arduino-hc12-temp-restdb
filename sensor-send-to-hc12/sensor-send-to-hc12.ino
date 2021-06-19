@@ -53,7 +53,7 @@ void setup()
     Serial.println(" milliseconds!");
     sensors.begin();
 
-    hc12config();
+    //hc12config();
 
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, HIGH);
@@ -142,9 +142,10 @@ void sendDataNow()
                 Serial.println("End of message");
             }
             Watchdog.reset();
+            sendData = now() + SEND_WAIT; // wait this long until we send data again
+        } else {
+          Serial.println("Could not receive response!");
         }
-    
-        sendData = now() + SEND_WAIT; // wait this long until we send data again
         Serial.println("Waiting until " + formatDateTime(sendData) + " to send data again");
     }
 }

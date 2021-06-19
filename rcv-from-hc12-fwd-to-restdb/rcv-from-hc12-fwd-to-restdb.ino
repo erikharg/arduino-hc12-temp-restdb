@@ -45,7 +45,6 @@ String errortext = "ERROR";
 String readBuffer = "";
 int setPin = 1;
 
-
 // Timekeeping
 unsigned int localNTPPort = 2359;
 IPAddress timeServer(216, 239, 35, 0); // time.nist.gov NTP server
@@ -76,7 +75,7 @@ void setup()
     Serial.print(countdownMS, DEC);
     Serial.println(" milliseconds!");
 
-    hc12config();
+    //hc12config();
 
     Serial.println("Testing connection with Wifi");
     Watchdog.reset();
@@ -134,6 +133,8 @@ void loop()
         }
         Serial.print("Gathered sample (#" + String(sampleNo) + ") at ");
         Serial.print(formatDateTime(ticktime) + "\n");
+        Serial.println("Sending data at " + formatDateTime(sendData));
+        printWifiStatus();
         Watchdog.reset();
         JSONVar sample;
         char buf[sizeof(readBuffer)];
@@ -238,10 +239,10 @@ void loop()
         if (statusCode >= 200 && statusCode < 300)
         {
             tempValues = JSONVar(); // empty the value array
+            sendData = now() + SEND_WAIT; // wait this long until we send data again
         }
         Watchdog.reset();
 
-        sendData = now() + SEND_WAIT; // wait this long until we send data again
         Serial.println("Waiting until " + formatDateTime(sendData) + " to send data again");
     }
     
