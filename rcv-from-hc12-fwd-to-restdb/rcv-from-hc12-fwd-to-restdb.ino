@@ -1,7 +1,7 @@
 /*
   Temperature sensor to RESTDB.io collection
-  HC-12 version (part 2):
-  Receive measurements from HC-12 Long Range Radio serial communication, send to RESTDB.io via Wifi/internet
+  APC220 version (part 2):
+  Receive measurements from APC220 Long Range Radio serial communication, send to RESTDB.io via Wifi/internet
   By: Erik Harg <erik@harg.no>
 
 */
@@ -41,7 +41,7 @@ String response = "";
 String oktext = "OK";
 String errortext = "ERROR";
 
-// HC-12 Communications initialize variables
+// APC220 Communications initialize variables
 String readBuffer = "";
 int setPin = 1;
 
@@ -64,7 +64,7 @@ void setup()
     Serial.begin(9600);
     delay(5000);
     
-    // Setup HC-12
+    // Setup APC220
     Serial1.begin(9600);
 
     Serial.println("\n");
@@ -75,27 +75,13 @@ void setup()
     Serial.print(countdownMS, DEC);
     Serial.println(" milliseconds!");
 
-    //hc12config();
-
     Serial.println("Testing connection with Wifi");
     Watchdog.reset();
-    while (status != WL_CONNECTED)
-    {
-        Serial.print("Attempting to connect to SSID ");
-        Serial.println(ssid);
-        // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
-        status = WiFi.begin(ssid.c_str(), pass.c_str());
-        // wait 5 seconds for connection:
-        delay(5000);
-    }
-    Watchdog.reset();
-    printWifiStatus();
-
-    Udp.begin(localNTPPort);
+    connectToWiFi();
 
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, HIGH);
-
+    disconnectFromWiFi();
 }
 
 void loop()
@@ -111,11 +97,11 @@ void loop()
         updateTimeKeeper();
     }
 
-    // Get data from HC-12
+    // Get data from APC220
     Watchdog.reset();
     if(Serial1.available())
     {
-        Serial.println("Got UART data from HC-12");
+        Serial.println("Got UART data from APC220");
         Watchdog.reset();
         while (Serial1.available())
         {
@@ -170,18 +156,7 @@ void loop()
         Serial.print("Checking Wifi network at ");
         Serial.print(formatDateTime(ticktime) + "...\n");
         Watchdog.reset();
-        status = WiFi.status();
-        Watchdog.reset();
-        while (status != WL_CONNECTED)
-        {
-            Serial.print("Attempting to re-connect to SSID ");
-            Serial.println(ssid);
-            // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
-            status = WiFi.begin(ssid.c_str(), pass.c_str());
-            // wait 5 seconds for connection:
-            delay(5000);
-        }
-        Watchdog.reset();
+        connectToWiFi();
 
         Serial.print("Making HTTP POST request with ");
         Serial.print(tempValues.length());
@@ -224,17 +199,18 @@ void loop()
         // read the status code and body of the response
         Serial.println("Getting response");
         // TODO: Fix timeout issue to re-enable Watchdog here
-        Watchdog.disable();
+        //Watchdog.disable();
         
         int statusCode = client.responseStatusCode();
         Serial.print("Status code: ");
         Serial.println(statusCode);
-
+        
+        Watchdog.reset();
         String response = client.responseBody();
         Serial.print("Response: ");
         Serial.println(response);
         
-        Watchdog.enable(16000);
+        //Watchdog.enable(16000);
         
         if (statusCode >= 200 && statusCode < 300)
         {
@@ -244,6 +220,7 @@ void loop()
         Watchdog.reset();
 
         Serial.println("Waiting until " + formatDateTime(sendData) + " to send data again");
+        disconnectFromWiFi();
     }
     
     //Serial.println("Loop done");
@@ -276,82 +253,66 @@ String formatDateTime(time_t t)
 
 void updateTimeKeeper()
 {
-    time_t pre = now();
+    Watchdog.reset();
+    Serial.println("Update timekeeper");
+    connectToWiFi();
+    Serial.println("WiFi connected, get time...");
+    Udp.begin(localNTPPort);
+    //Try up to this many times (UDP is uncertain...)
+    int tries = 10;
     
-    Watchdog.reset();
-    sendNTPpacket(timeServer); // send an NTP packet to a time server
-    Watchdog.reset();
+    time_t pre = now();
 
-    // wait to see if a reply is available
-    delay(1000);
-    Watchdog.reset();
-    if (Udp.parsePacket()) {
-        Serial.println("UDP packet received");
+    while(tries > 0) {
+      Serial.print("Tries: ");
+      Serial.print(tries);
+      Serial.print("\n");
+      tries--;
+      Watchdog.reset();
+      sendNTPpacket(timeServer); // send an NTP packet to a time server
+      Watchdog.reset();
+  
+      // wait to see if a reply is available
+      delay(1000);
+      Watchdog.reset();
+      if (Udp.parsePacket()) {
+          Serial.println("UDP packet received");
+  
+          // We've received a packet, read the data from it
+          Udp.read(packetBuffer, NTP_PACKET_SIZE); // read the packet into the buffer
+          //the timestamp starts at byte 40 of the received packet and is four bytes,
+          // or two words, long. First, extract the two words:
+  
+          unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
+          unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);
+          // combine the four bytes (two words) into a long integer
+          // this is NTP time (seconds since Jan 1 1900):
+          unsigned long secsSince1900 = highWord << 16 | lowWord;
+          Serial.print("Seconds since Jan 1 1900 = ");
+          Serial.println(secsSince1900);
+          // now convert NTP time into everyday time:
+          Serial.print("Unix time = ");
+          // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
+          const unsigned long seventyYears = 2208988800UL;
+          // subtract seventy years:
+          unsigned long epoch = secsSince1900 - seventyYears;
 
-        // We've received a packet, read the data from it
-        Udp.read(packetBuffer, NTP_PACKET_SIZE); // read the packet into the buffer
-        //the timestamp starts at byte 40 of the received packet and is four bytes,
-        // or two words, long. First, esxtract the two words:
+          // we got a valid date
+          if(epoch > 10000)
+          {
+            setTime(epoch);
+            Watchdog.reset();
+  
+            time_t pst = now();
+            Serial.println("Time pre-Wifi:" + String((unsigned long)pre));
+            Serial.println("Time postWifi:" + String((unsigned long)pst));
 
-        unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
-        unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);
-        // combine the four bytes (two words) into a long integer
-        // this is NTP time (seconds since Jan 1 1900):
-        unsigned long secsSince1900 = highWord << 16 | lowWord;
-        Serial.print("Seconds since Jan 1 1900 = ");
-        Serial.println(secsSince1900);
-        // now convert NTP time into everyday time:
-        Serial.print("Unix time = ");
-        // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
-        const unsigned long seventyYears = 2208988800UL;
-        // subtract seventy years:
-        unsigned long epoch = secsSince1900 - seventyYears;
-        
-        setTime(epoch);
-        Watchdog.reset();
-
-        time_t pst = now();
-        Serial.println("Time pre-Wifi:" + String((unsigned long)pre));
-        Serial.println("Time postWifi:" + String((unsigned long)pst));
+            // don't need another run
+            tries = 0;
+          }
+      }
     }
-}
-
-void hc12config()
-{
-    pinMode(setPin, OUTPUT);
-    Serial.println("HC-12 config:");
-    digitalWrite(setPin, LOW);
-    delay(100);
-    Serial1.print("AT+DEFAULT");
-    delay(100);
-    Serial1.print("AT+V");
-    delay(100);
-    while(Serial1.available()) {
-      Serial.write(Serial1.read());
-    }
-    Serial1.print("AT+RB");
-    delay(100);
-    while(Serial1.available()) {
-      Serial.write(Serial1.read());
-    }
-    Serial1.print("AT+RC");
-    delay(100);
-    while(Serial1.available()) {
-      Serial.write(Serial1.read());
-    }
-    Serial1.print("AT+RF");
-    delay(100);
-    while(Serial1.available()) {
-      Serial.write(Serial1.read());
-    }
-    Serial1.print("AT+RP");
-    delay(100);
-    while(Serial1.available()) {
-      Serial.write(Serial1.read());
-    }
-    digitalWrite(setPin, HIGH);
-    Serial.write("\n");
-    Serial.println("Setup complete!\n=== STARTING LOOP ===");
+    disconnectFromWiFi();
 }
 
 void printWifiStatus()
@@ -398,4 +359,28 @@ void sendNTPpacket(IPAddress address) {
   Udp.beginPacket(address, 123); // NTP requests are to port 123
   Udp.write(packetBuffer, NTP_PACKET_SIZE);
   Udp.endPacket();
+}
+
+void connectToWiFi() {
+  status = WiFi.status();
+  Watchdog.reset();
+  while (status != WL_CONNECTED)
+  {
+    Serial.print("Attempting to connect to SSID ");
+    Serial.println(ssid);
+    // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
+    status = WiFi.begin(ssid.c_str(), pass.c_str());
+    // wait 5 seconds for connection:
+    delay(5000);
+    status = WiFi.status();
+  }
+  Serial.println("WiFi connected");
+  printWifiStatus();
+  Watchdog.reset();
+}
+
+void disconnectFromWiFi() {
+  WiFi.end();
+  status = WiFi.status();
+  Watchdog.reset();
 }

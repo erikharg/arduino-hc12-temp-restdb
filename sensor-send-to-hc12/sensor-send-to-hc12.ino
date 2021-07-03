@@ -1,7 +1,7 @@
 /*
   Temperature sensor to RESTDB.io collection
-  HC-12 version (part 1):
-  Temperature sensor via HC-12 Long Range Radio serial communication to remote HC-12
+  APC220 version (part 1):
+  Temperature sensor via APC220 Long Range Radio serial communication to remote APC220
   By: Erik Harg <erik@harg.no>
 
 */
@@ -30,7 +30,7 @@ unsigned long sendData = 0;         // next time we'll send data
 unsigned long SEND_WAIT = 600;     // how long to wait between submissions -- 600 = 10 min
 unsigned long LOOP_WAIT_MS = 1000;  // how long to wait between loops -- 1000 ms = 1 sec
 
-// HC-12 Communications initialize variables
+// APC220 Communications initialize variables
 String readBuffer = "";
 
 void setup()
@@ -40,7 +40,7 @@ void setup()
     // initialize serial communications and wait for port to open:
     Serial.begin(9600);
     delay(5000);
-    // Setup HC-12
+    // Setup APC220
     Serial1.begin(9600);
   
     // Starting service
@@ -52,8 +52,6 @@ void setup()
     Serial.print(countdownMS, DEC);
     Serial.println(" milliseconds!");
     sensors.begin();
-
-    //hc12config();
 
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, HIGH);
@@ -101,14 +99,14 @@ void sendDataNow()
         Serial.print("Sending temperature data:");
         String sendString = tempString + ";" + voltageString;
         Serial.println(sendString);
-        Serial1.write(sendString.c_str()); // Send over HC-12 (Serial1)
+        Serial1.write(sendString.c_str()); // Send over APC220 (Serial1)
         Serial.println("Sent, waiting for reply...");
 
         Watchdog.reset();
         
-        delay(500); // wait for HC-12 to reply
+        delay(500); // wait for APC220 to reply
     
-        // read data back from HC-12
+        // read data back from APC220
         Watchdog.reset();
         time_t looptime = now() + (time_t)10;
         while(!Serial1.available() && now() < looptime) 
@@ -120,7 +118,7 @@ void sendDataNow()
         readBuffer = "";
         if (Serial1.available())
         {
-            Serial.println("Got UART data from HC-12");
+            Serial.println("Got UART data from APC220");
             Watchdog.reset();
             while (Serial1.available())
             {
@@ -148,47 +146,6 @@ void sendDataNow()
         }
         Serial.println("Waiting until " + formatDateTime(sendData) + " to send data again");
     }
-}
-
-void hc12config()
-{
-    pinMode(HC12_SET_PIN, OUTPUT);
-    Serial.println("HC-12 config:");
-    digitalWrite(HC12_SET_PIN, LOW);
-    delay(100);
-    Serial1.print("AT+DEFAULT");
-    delay(100);
-    Serial1.print("AT+V");
-    delay(100);
-    while(Serial1.available()) {
-      Serial.write(Serial1.read());
-    }
-    Serial1.print("AT+RB");
-    delay(100);
-    while(Serial1.available()) {
-      Serial.write(Serial1.read());
-    }
-    Serial1.print("AT+RC");
-    delay(100);
-    while(Serial1.available()) {
-      Serial.write(Serial1.read());
-    }
-    Serial1.print("AT+RF");
-    delay(100);
-    while(Serial1.available()) {
-      Serial.write(Serial1.read());
-    }
-    Serial1.print("AT+RP");
-    delay(100);
-    while(Serial1.available()) {
-      Serial.write(Serial1.read());
-    }
-    
-    digitalWrite(HC12_SET_PIN, HIGH);
-    
-    Serial.write("\n");
-    Serial.println("Setup complete!\n=== STARTING LOOP ===");
-
 }
 
 float getTemp()
