@@ -33,6 +33,7 @@ HttpClient client = HttpClient(wificlient, serverAddress, port);
 
 // Variable for keeping the next values to send
 JSONVar tempValues;
+double lastTemp = 0.0;
 
 // Variable for saving obtained response
 String response = "";
@@ -53,8 +54,9 @@ byte packetBuffer[NTP_PACKET_SIZE];    //buffer to hold incoming and outgoing pa
 WiFiUDP Udp;                           // A UDP instance to let us send and receive packets over UDP
 
 unsigned long sendData = 0;     // next time we'll send data
-unsigned long SEND_WAIT = 1800; // how long to wait between submissions -- 3600 = 1h
-unsigned long LOOP_WAIT_MS = 1000;  // how long to wait between loops -- 1000 ms = 1 sec
+unsigned long SEND_WAIT = 3600; // how long to wait between submissions -- 3600 = 1h
+unsigned long LOOP_WAIT_MS = 5000;  // how long to wait between loops -- 5000 ms = 5 sec
+unsigned long lastLoopMillis = 0; // time of last loop execution
 
 void setup()
 {
@@ -62,7 +64,7 @@ void setup()
 
     // initialize serial communications and wait for port to open:
     Serial.begin(9600);
-    delay(5000);
+    delay(1000);
     
     // Setup APC220
     Serial1.begin(9600);
@@ -81,153 +83,179 @@ void setup()
 
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, HIGH);
-    disconnectFromWiFi();
 }
 
 void loop()
 {
-    Watchdog.reset();
-    digitalWrite(LED_BUILTIN, HIGH);
-
-    time_t ticktime = now();
-
-    // Get time if current time is unrealistic
-    if (ticktime < 10000) 
+    unsigned long currentMillis = millis();
+    if(currentMillis - lastLoopMillis >= LOOP_WAIT_MS)
     {
-        updateTimeKeeper();
-    }
-
-    // Get data from APC220
-    Watchdog.reset();
-    if(Serial1.available())
-    {
-        Serial.println("Got UART data from APC220");
-        Watchdog.reset();
-        while (Serial1.available())
-        {
-            int msg = Serial1.read();
-            readBuffer += (char)msg;
-            //Serial.write(msg);
-        }
-        Watchdog.reset();
-        Serial.print("Received:");
-        Serial.print(readBuffer + "\n");
-
-        int sampleNo = tempValues.length();
-        if(sampleNo < 0) {
-          sampleNo = 0;
-        }
-        Serial.print("Gathered sample (#" + String(sampleNo) + ") at ");
-        Serial.print(formatDateTime(ticktime) + "\n");
-        Serial.println("Sending data at " + formatDateTime(sendData));
-        printWifiStatus();
-        Watchdog.reset();
-        JSONVar sample;
-        char buf[sizeof(readBuffer)];
-        readBuffer.toCharArray(buf, sizeof(buf));
-        char *p = buf;
-        char *str;
-        int i = 0;
-        Watchdog.reset();
-        while ((str = strtok_r(p, ";", &p)) != NULL) // delimiter is the semicolon
-        {
-          if(i == 0) 
+      Watchdog.reset();
+      digitalWrite(LED_BUILTIN, HIGH);
+  
+      time_t ticktime = now();
+  
+      // Get time if current time is unrealistic
+      if (ticktime < 10000) 
+      {
+          updateTimeKeeper();
+          ticktime = now(); // use the newly set time as it is more accurate
+      }
+  
+      // Get data from APC220
+      Watchdog.reset();
+      if(Serial1.available())
+      {
+          Serial.println("Got UART data from APC220");
+          Watchdog.reset();
+          while (Serial1.available())
           {
-            sample["temperature"] = String(str);
-          } else if (i == 1) 
-          {
-            sample["voltage"] = String(str);
-          } else 
-          {
-            Serial.println("Extra data received [" + String(i) + "]: " + String(str));
+              int msg = Serial1.read();
+              readBuffer += (char)msg;
+              //Serial.write(msg);
           }
-          i++;
-        }
-        sample["time"] = formatDateTime(ticktime);
-        tempValues[sampleNo] = sample;
-        readBuffer = "";
-        Watchdog.reset();
-        Serial1.write("ACK");
+          Watchdog.reset();
+          Serial.print("Received:");
+          Serial.print(readBuffer + "\n");
+  
+          int sampleNo = tempValues.length();
+          if(sampleNo < 0) {
+            sampleNo = 0;
+          }
+          Serial.print("Gathered sample (#" + String(sampleNo) + ") at ");
+          Serial.print(formatDateTime(ticktime) + "\n");
+          Serial.println("Sending data at " + formatDateTime(sendData));
+          printWifiStatus();
+          Watchdog.reset();
+          JSONVar sample;
+          char buf[sizeof(readBuffer)];
+          readBuffer.toCharArray(buf, sizeof(buf));
+          char *p = buf;
+          char *str;
+          int i = 0;
+          bool validSample = false;
+          double thisTemp = 0.0;
+          Watchdog.reset();
+          while ((str = strtok_r(p, ";", &p)) != NULL) // delimiter is the semicolon
+          {
+            char *end;
+            double val = strtod(str, &end);
+            if(str != end) {
+              if(i == 0) 
+              {
+                sample["temperature"] = String(val);
+                validSample = true;
+                thisTemp = val;
+              } else if (i == 1) 
+              {
+                sample["voltage"] = String(val);
+              } else 
+              {
+                Serial.println("Extra data received [" + String(i) + "]: " + String(str));
+              }  
+            } else {
+              Serial.println("Invalid value received [" + String(i) + "]: " + String(str));
+            }
+            
+            i++;
+          }
+          if(sampleNo > 0 && validSample) {
+            if(abs(thisTemp-lastTemp) > 10.0) {
+              // Temp diff is too large, likely a measurement or transmission error
+              validSample = false;
+            } else {
+              lastTemp = thisTemp;
+            }
+          }
+          // If we got a valid temperature, and it survived the diff check above, store it...
+          if(validSample) {
+            sample["time"] = formatDateTime(ticktime);
+            tempValues[sampleNo] = sample;
+          }
+          readBuffer = "";
+          Watchdog.reset();
+          Serial1.write("ACK");
+      }
+  
+      if (ticktime > sendData && tempValues.length() > 0)
+      {
+          // check for Wifi
+          Serial.print("Checking Wifi network at ");
+          Serial.print(formatDateTime(ticktime) + "...\n");
+          Watchdog.reset();
+          connectToWiFi();
+  
+          Serial.print("Making HTTP POST request with ");
+          Serial.print(tempValues.length());
+          Serial.print(" samples:\n");
+          String contentType = "application/json";
+          String postData = JSON.stringify(tempValues);
+          
+          Serial.println("POST Data:");
+          Serial.println(postData);
+          Serial.println("End of POST Data");
+  
+          Watchdog.reset();
+          client.beginRequest();
+          Watchdog.reset();
+          Serial.print(".");
+          int httpretval = client.post("/rest/temperatures");
+          Watchdog.reset();
+          Serial.println("Started request: " + String(httpretval));
+          Serial.print(".");
+          client.sendHeader(HTTP_HEADER_CONTENT_TYPE, contentType);
+          Watchdog.reset();
+          Serial.print(".");
+          client.sendHeader(HTTP_HEADER_CONTENT_LENGTH, postData.length());
+          Watchdog.reset();
+          Serial.print(".");
+          client.sendHeader("x-apikey", X_API_KEY);
+          Watchdog.reset();
+          Serial.print(".");
+          client.beginBody();
+          Watchdog.reset();
+          Serial.print(".");
+          int bytesWritten = client.print(postData);
+          Watchdog.reset();
+          Serial.println("Wrote " + String(bytesWritten) + " bytes");
+          Serial.print(".");
+          client.endRequest();
+          Watchdog.reset();
+          Serial.print("OK\n");
+  
+          // read the status code and body of the response
+          Serial.println("Getting response");
+          // TODO: Fix timeout issue to re-enable Watchdog here
+          //Watchdog.disable();
+          
+          int statusCode = client.responseStatusCode();
+          Serial.print("Status code: ");
+          Serial.println(statusCode);
+          
+          Watchdog.reset();
+          String response = client.responseBody();
+          Serial.print("Response: ");
+          Serial.println(response);
+          
+          //Watchdog.enable(16000);
+          
+          if (statusCode >= 200 && statusCode < 300)
+          {
+              tempValues = JSONVar(); // empty the value array
+              sendData = now() + SEND_WAIT; // wait this long until we send data again
+          }
+          Watchdog.reset();
+  
+          Serial.println("Waiting until " + formatDateTime(sendData) + " to send data again");
+          disconnectFromWiFi();
+      }
+      
+      //Serial.println("Loop done");
+      Watchdog.reset();
+      digitalWrite(LED_BUILTIN, LOW);
+      lastLoopMillis = millis(); // set the timing for the next loop
+      Watchdog.reset();
     }
-
-    if (ticktime > sendData && tempValues.length() > 0)
-    {
-        // check for Wifi
-        Serial.print("Checking Wifi network at ");
-        Serial.print(formatDateTime(ticktime) + "...\n");
-        Watchdog.reset();
-        connectToWiFi();
-
-        Serial.print("Making HTTP POST request with ");
-        Serial.print(tempValues.length());
-        Serial.print(" samples:\n");
-        String contentType = "application/json";
-        String postData = JSON.stringify(tempValues);
-        
-        Serial.println("POST Data:");
-        Serial.println(postData);
-        Serial.println("End of POST Data");
-
-        Watchdog.reset();
-        client.beginRequest();
-        Watchdog.reset();
-        Serial.print(".");
-        int httpretval = client.post("/rest/temperatures");
-        Watchdog.reset();
-        Serial.println("Started request: " + String(httpretval));
-        Serial.print(".");
-        client.sendHeader(HTTP_HEADER_CONTENT_TYPE, contentType);
-        Watchdog.reset();
-        Serial.print(".");
-        client.sendHeader(HTTP_HEADER_CONTENT_LENGTH, postData.length());
-        Watchdog.reset();
-        Serial.print(".");
-        client.sendHeader("x-apikey", X_API_KEY);
-        Watchdog.reset();
-        Serial.print(".");
-        client.beginBody();
-        Watchdog.reset();
-        Serial.print(".");
-        int bytesWritten = client.print(postData);
-        Watchdog.reset();
-        Serial.println("Wrote " + String(bytesWritten) + " bytes");
-        Serial.print(".");
-        client.endRequest();
-        Watchdog.reset();
-        Serial.print("OK\n");
-
-        // read the status code and body of the response
-        Serial.println("Getting response");
-        // TODO: Fix timeout issue to re-enable Watchdog here
-        //Watchdog.disable();
-        
-        int statusCode = client.responseStatusCode();
-        Serial.print("Status code: ");
-        Serial.println(statusCode);
-        
-        Watchdog.reset();
-        String response = client.responseBody();
-        Serial.print("Response: ");
-        Serial.println(response);
-        
-        //Watchdog.enable(16000);
-        
-        if (statusCode >= 200 && statusCode < 300)
-        {
-            tempValues = JSONVar(); // empty the value array
-            sendData = now() + SEND_WAIT; // wait this long until we send data again
-        }
-        Watchdog.reset();
-
-        Serial.println("Waiting until " + formatDateTime(sendData) + " to send data again");
-        disconnectFromWiFi();
-    }
-    
-    //Serial.println("Loop done");
-    Watchdog.reset();
-    digitalWrite(LED_BUILTIN, LOW);
-    delay(LOOP_WAIT_MS); // wait this long until we run the loop again;
-    Watchdog.reset();
 }
 
 String formatDateTime(time_t t)
@@ -370,8 +398,13 @@ void connectToWiFi() {
     Serial.println(ssid);
     // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
     status = WiFi.begin(ssid.c_str(), pass.c_str());
-    // wait 5 seconds for connection:
-    delay(5000);
+    // wait up to 5 seconds for connection:
+    time_t looptime = now() + (time_t)5;
+    while(WiFi.status != WL_CONNECTED && now() < looptime) 
+    {
+      Serial.print(".");
+      delay(200);
+    }
     status = WiFi.status();
   }
   Serial.println("WiFi connected");

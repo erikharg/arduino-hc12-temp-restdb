@@ -27,8 +27,8 @@ DallasTemperature sensors(&oneWire);
 
 // Timekeeping
 unsigned long sendData = 0;         // next time we'll send data
-unsigned long SEND_WAIT = 600;     // how long to wait between submissions -- 600 = 10 min
-unsigned long LOOP_WAIT_MS = 1000;  // how long to wait between loops -- 1000 ms = 1 sec
+unsigned long SEND_WAIT = 1800;     // how long to wait between submissions -- 600 = 10 min
+unsigned long LOOP_WAIT_MS = 2000;  // how long to wait between loops -- 1000 ms = 1 sec
 
 // APC220 Communications initialize variables
 String readBuffer = "";
