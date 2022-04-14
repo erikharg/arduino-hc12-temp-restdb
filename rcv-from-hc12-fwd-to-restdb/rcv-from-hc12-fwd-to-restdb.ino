@@ -400,7 +400,7 @@ void connectToWiFi() {
     status = WiFi.begin(ssid.c_str(), pass.c_str());
     // wait up to 5 seconds for connection:
     time_t looptime = now() + (time_t)5;
-    while(WiFi.status != WL_CONNECTED && now() < looptime) 
+    while(WiFi.status() != WL_CONNECTED && now() < looptime) 
     {
       Serial.print(".");
       delay(200);
