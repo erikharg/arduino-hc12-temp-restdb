@@ -225,8 +225,6 @@ void loop()
   
           // read the status code and body of the response
           Serial.println("Getting response");
-          // TODO: Fix timeout issue to re-enable Watchdog here
-          //Watchdog.disable();
           
           int statusCode = client.responseStatusCode();
           Serial.print("Status code: ");
@@ -236,9 +234,7 @@ void loop()
           String response = client.responseBody();
           Serial.print("Response: ");
           Serial.println(response);
-          
-          //Watchdog.enable(16000);
-          
+                    
           if (statusCode >= 200 && statusCode < 300)
           {
               tempValues = JSONVar(); // empty the value array

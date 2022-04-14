@@ -27,8 +27,9 @@ DallasTemperature sensors(&oneWire);
 
 // Timekeeping
 unsigned long sendData = 0;         // next time we'll send data
-unsigned long SEND_WAIT = 1800;     // how long to wait between submissions -- 600 = 10 min
-unsigned long LOOP_WAIT_MS = 2000;  // how long to wait between loops -- 1000 ms = 1 sec
+unsigned long SEND_WAIT = 1800;     // how long to wait between submissions -- 1800 = 30 min
+unsigned long LOOP_WAIT_MS = 2000;  // how long to wait between loops -- 2000 ms = 2 sec
+unsigned long lastLoopMillis = 0; // time of last loop execution
 
 // APC220 Communications initialize variables
 String readBuffer = "";
@@ -59,24 +60,28 @@ void setup()
 
 void loop()
 {
-    Watchdog.reset();
-    digitalWrite(LED_BUILTIN, HIGH);
-
-    time_t ticktime = now();
-
-    // we should send data
-    if (ticktime > sendData)
+    unsigned long currentMillis = millis();
+    if(currentMillis - lastLoopMillis >= LOOP_WAIT_MS)
     {
-        Serial.print("Send data at ");
-        Serial.print(formatDateTime(ticktime) + "\n");
-        sendDataNow();
+      Watchdog.reset();
+      digitalWrite(LED_BUILTIN, HIGH);
+  
+      time_t ticktime = now();
+  
+      // we should send data
+      if (ticktime > sendData)
+      {
+          Serial.print("Send data at ");
+          Serial.print(formatDateTime(ticktime) + "\n");
+          sendDataNow();
+      }
+      //Serial.println("Loop done");
+  
+      Watchdog.reset();
+      digitalWrite(LED_BUILTIN, LOW);
+      lastLoopMillis = millis(); // set the timing for the next loop
+      Watchdog.reset();
     }
-    //Serial.println("Loop done");
-
-    Watchdog.reset();
-    digitalWrite(LED_BUILTIN, LOW);
-    delay(LOOP_WAIT_MS); // wait this long until we run the loop again;
-    Watchdog.reset();
 }
 
 void sendDataNow()
