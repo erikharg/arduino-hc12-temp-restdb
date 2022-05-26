@@ -139,13 +139,13 @@ void sendDataNow()
                 Serial.println("Got response message:");  
                 Serial.println(readBuffer);
                 Serial.println("End of message");
+                sendData = now() + SEND_WAIT; // wait this long until we send data again
             } else {
                 Serial.println("Got unsupported message:");
                 Serial.println(readBuffer);
                 Serial.println("End of message");
             }
-            Watchdog.reset();
-            sendData = now() + SEND_WAIT; // wait this long until we send data again
+            Watchdog.reset();            
         } else {
           Serial.println("Could not receive response!");
         }
