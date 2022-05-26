@@ -1,7 +1,7 @@
 /*
   Temperature sensor to RESTDB.io collection
-  APC220 version (part 2):
-  Receive measurements from APC220 Long Range Radio serial communication, send to RESTDB.io via Wifi/internet
+  E32-868T30D version (part 2):
+  Receive measurements from E32-868T30D LoRa radio serial communication, send to RESTDB.io via Wifi/internet
   By: Erik Harg <erik@harg.no>
 
 */
@@ -42,9 +42,19 @@ String response = "";
 String oktext = "OK";
 String errortext = "ERROR";
 
-// APC220 Communications initialize variables
+// Radio Communications initialize variables
+unsigned radioWorkingMode = 0;
+unsigned radioWakeupMode = 1;
+unsigned radioPowerSavingMode = 2;
+unsigned radioConfigMode = 3;
+int mZeroPin = 3;
+int mOnePin = 4;
+int auxPin = 5;
+
+byte readParams = 0xC1;
+uint8_t cmd[3] = {readParams, readParams, readParams};
+
 String readBuffer = "";
-int setPin = 1;
 
 // Timekeeping
 unsigned int localNTPPort = 2359;
@@ -54,7 +64,7 @@ byte packetBuffer[NTP_PACKET_SIZE];    //buffer to hold incoming and outgoing pa
 WiFiUDP Udp;                           // A UDP instance to let us send and receive packets over UDP
 
 unsigned long sendData = 0;     // next time we'll send data
-unsigned long SEND_WAIT = 3600; // how long to wait between submissions -- 3600 = 1h
+unsigned long SEND_WAIT = 1800; // how long to wait between submissions -- 3600 = 1h
 unsigned long LOOP_WAIT_MS = 5000;  // how long to wait between loops -- 5000 ms = 5 sec
 unsigned long lastLoopMillis = 0; // time of last loop execution
 
@@ -64,25 +74,59 @@ void setup()
 
     // initialize serial communications and wait for port to open:
     Serial.begin(9600);
-    delay(1000);
-    
-    // Setup APC220
-    Serial1.begin(9600);
-
-    Serial.println("\n");
-    Serial.println("\n");
-    Serial.println("\n");
-    Serial.println("\nStarting service!");
     Serial.print("Enabled the watchdog with max countdown of ");
     Serial.print(countdownMS, DEC);
     Serial.println(" milliseconds!");
 
+    delay(5000);
+    
+    // Setup Radio
+    pinMode(mZeroPin, OUTPUT);
+    pinMode(mOnePin, OUTPUT);
+    pinMode(auxPin, INPUT);
+
+    Serial.println("Starting radio");
+    Serial1.begin(9600, SERIAL_8N1);
+    int radioReady = digitalRead(auxPin);
+    Watchdog.reset();
+    while(radioReady == LOW) {
+      Serial.print(".");
+      delay(100);
+      radioReady = digitalRead(auxPin);
+    }
+    Serial.println("...");
+    Watchdog.reset();
+    setRadioMode(radioConfigMode);
+    Serial.println("Getting radio config...");
+    Serial1.write(cmd, 3);
+    delay(100);
+    
+    if(Serial1.available())
+    {
+      int i = 0;
+      while (Serial1.available())
+      {
+        int msg = Serial1.read();
+        Serial.println("Got:");
+        Serial.print(i);
+        Serial.print(": ");
+        Serial.print(msg, HEX);
+        Serial.print("\n");
+        i++;
+      }
+    }
+    setRadioMode(radioPowerSavingMode);
+    Watchdog.reset();
+    
+    Serial.println("\nStarting service!");
+    
     Serial.println("Testing connection with Wifi");
     Watchdog.reset();
     connectToWiFi();
 
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, HIGH);
+    Serial.flush();
 }
 
 void loop()
@@ -101,12 +145,12 @@ void loop()
           updateTimeKeeper();
           ticktime = now(); // use the newly set time as it is more accurate
       }
-  
-      // Get data from APC220
+      // Get data from Radio
       Watchdog.reset();
+
       if(Serial1.available())
       {
-          Serial.println("Got UART data from APC220");
+          Serial.println("Got UART data from Radio");
           Watchdog.reset();
           while (Serial1.available())
           {
@@ -174,7 +218,21 @@ void loop()
           }
           readBuffer = "";
           Watchdog.reset();
-          Serial1.write("ACK");
+
+          // Write response to radio
+          Serial.println("Sending ACK back");
+          setRadioMode(radioWakeupMode);
+          /*int radioReady  = digitalRead(auxPin);
+          while(radioReady == LOW) {
+            Serial.print(".");
+            delay(100);
+            radioReady = digitalRead(auxPin);
+          }*/
+          String ack = "ACK " + repeatedString(".", 250);
+          Serial1.print(ack);
+          delay(250);
+          Serial.println("Sent ACK");
+          setRadioMode(radioPowerSavingMode);
       }
   
       if (ticktime > sendData && tempValues.length() > 0)
@@ -273,6 +331,13 @@ String formatDateTime(time_t t)
     String retval = y_s + "-" + mn_s + "-" + d_s + " " + h_s + ":" + mi_s + ":" + s_s + " UTC";
 
     return retval;
+}
+
+String repeatedString(String input, int count) {
+  String output = "";
+  while(count-- > 0) {
+    output += input;
+  }
 }
 
 void updateTimeKeeper()
@@ -412,4 +477,27 @@ void disconnectFromWiFi() {
   WiFi.end();
   status = WiFi.status();
   Watchdog.reset();
+}
+
+void setRadioMode(unsigned radioMode)
+{
+  Serial.print("Setting radio mode M0=");
+  Serial.print(getModeZero(radioMode) ? HIGH : LOW);
+  Serial.print(", M1=");
+  Serial.print(getModeOne(radioMode) ? HIGH : LOW);
+  Serial.print("\n");
+
+  digitalWrite(mZeroPin, getModeZero(radioMode) ? HIGH : LOW);
+  digitalWrite(mOnePin,  getModeOne(radioMode)  ? HIGH : LOW);
+  delay(500);
+}
+
+bool getModeZero(unsigned radioMode)
+{
+  return (bool)((radioMode >> 0) & 1);
+}
+
+bool getModeOne(unsigned radioMode)
+{
+  return (bool)((radioMode >> 1) & 1);
 }

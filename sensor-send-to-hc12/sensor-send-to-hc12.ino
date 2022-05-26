@@ -1,7 +1,7 @@
 /*
   Temperature sensor to RESTDB.io collection
-  APC220 version (part 1):
-  Temperature sensor via APC220 Long Range Radio serial communication to remote APC220
+  E32-868T30D version (part 1):
+  Temperature sensor via E32-868T30D LoRa radio serial communication to remote E32-868T30D
   By: Erik Harg <erik@harg.no>
 
 */
@@ -17,8 +17,6 @@
 // Data wire is plugged into port 2 on the Arduino
 #define ONE_WIRE_BUS 2
 
-#define HC12_SET_PIN 1
-
 // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 OneWire oneWire(ONE_WIRE_BUS);
 
@@ -27,11 +25,22 @@ DallasTemperature sensors(&oneWire);
 
 // Timekeeping
 unsigned long sendData = 0;         // next time we'll send data
-unsigned long SEND_WAIT = 1800;     // how long to wait between submissions -- 1800 = 30 min
-unsigned long LOOP_WAIT_MS = 2000;  // how long to wait between loops -- 2000 ms = 2 sec
+unsigned long SEND_WAIT = 3600;     // how long to wait between submissions -- 1800 = 30 min
+unsigned long LOOP_WAIT_MS = 10000;  // how long to wait between loops -- 2000 ms = 2 sec
 unsigned long lastLoopMillis = 0; // time of last loop execution
 
-// APC220 Communications initialize variables
+// Radio Communications initialize variables
+unsigned radioWorkingMode = 0;
+unsigned radioWakeupMode = 1;
+unsigned radioPowerSavingMode = 2;
+unsigned radioConfigMode = 3;
+int mZeroPin = 3;
+int mOnePin = 4;
+int auxPin = 5;
+
+byte readParams = 0xC1;
+uint8_t cmd[3] = {readParams, readParams, readParams};
+
 String readBuffer = "";
 
 void setup()
@@ -40,18 +49,53 @@ void setup()
 
     // initialize serial communications and wait for port to open:
     Serial.begin(9600);
-    delay(5000);
-    // Setup APC220
-    Serial1.begin(9600);
-  
-    // Starting service
-    Serial.println("\n");
-    Serial.println("\n");
-    Serial.println("\n");
-    Serial.println("\nStarting service!");
     Serial.print("Enabled the watchdog with max countdown of ");
     Serial.print(countdownMS, DEC);
     Serial.println(" milliseconds!");
+    
+    delay(5000);
+    
+    pinMode(LED_BUILTIN, OUTPUT);
+    pinMode(mZeroPin, OUTPUT);
+    pinMode(mOnePin, OUTPUT);
+    pinMode(auxPin, INPUT);
+    
+    // Setup Radio
+    Serial.println("Starting radio");
+    Serial1.begin(9600, SERIAL_8N1);
+    int radioReady = digitalRead(auxPin);
+    Watchdog.reset();
+    while(radioReady == LOW) {
+      Serial.print(".");
+      delay(100);
+      radioReady = digitalRead(auxPin);
+    }
+    Serial.println("...");
+    Watchdog.reset();
+    setRadioMode(radioConfigMode);
+    Serial.println("Getting radio config...");
+    Serial1.write(cmd, 3);
+    delay(100);
+    
+    if(Serial1.available())
+    {
+      int i = 0;
+      while (Serial1.available())
+      {
+        int msg = Serial1.read();
+        Serial.println("Got:");
+        Serial.print(i);
+        Serial.print(": ");
+        Serial.print(msg, HEX);
+        Serial.print("\n");
+        i++;
+      }
+    }
+    setRadioMode(radioPowerSavingMode);
+    Watchdog.reset();
+    
+    Serial.println("\nStarting service!");
+    
     sensors.begin();
 
     pinMode(LED_BUILTIN, OUTPUT);
@@ -95,6 +139,7 @@ void sendDataNow()
     
     if (tempVal != DEVICE_DISCONNECTED_C && tempVal > -127.0f)
     {
+        setRadioMode(radioWakeupMode);
         tempString = tempAsString(tempVal);
 
         int sensorValue = analogRead(ADC_BATTERY);
@@ -104,16 +149,19 @@ void sendDataNow()
         Serial.print("Sending temperature data:");
         String sendString = tempString + ";" + voltageString;
         Serial.println(sendString);
-        Serial1.write(sendString.c_str()); // Send over APC220 (Serial1)
+        Serial1.write(sendString.c_str()); // Send over Radio (Serial1)
+        Serial1.flush();
+        
         Serial.println("Sent, waiting for reply...");
 
         Watchdog.reset();
         
-        delay(500); // wait for APC220 to reply
+        delay(250); // wait for Remote Radio to reply
+        setRadioMode(radioPowerSavingMode);
     
-        // read data back from APC220
+        // read data back from Radio
         Watchdog.reset();
-        time_t looptime = now() + (time_t)10;
+        time_t looptime = now() + (time_t)10; // max 10s wait
         while(!Serial1.available() && now() < looptime) 
         {
           Serial.println("now:" + formatDateTime(now()) + ", looptime:" + formatDateTime(looptime));
@@ -123,7 +171,7 @@ void sendDataNow()
         readBuffer = "";
         if (Serial1.available())
         {
-            Serial.println("Got UART data from APC220");
+            Serial.println("Got UART data from Radio");
             Watchdog.reset();
             while (Serial1.available())
             {
@@ -151,6 +199,28 @@ void sendDataNow()
         }
         Serial.println("Waiting until " + formatDateTime(sendData) + " to send data again");
     }
+}
+
+void setRadioMode(unsigned radioMode)
+{
+  Serial.print("Setting radio mode M0=");
+  Serial.print(getModeZero(radioMode) ? HIGH : LOW);
+  Serial.print(", M1=");
+  Serial.print(getModeOne(radioMode) ? HIGH : LOW);
+  Serial.print("\n");
+  digitalWrite(mZeroPin, getModeZero(radioMode) ? HIGH : LOW);
+  digitalWrite(mOnePin,  getModeOne(radioMode)  ? HIGH : LOW);
+  delay(500);
+}
+
+bool getModeZero(unsigned radioMode)
+{
+  return (bool)((radioMode >> 0) & 1);
+}
+
+bool getModeOne(unsigned radioMode)
+{
+  return (bool)((radioMode >> 1) & 1);
 }
 
 float getTemp()
