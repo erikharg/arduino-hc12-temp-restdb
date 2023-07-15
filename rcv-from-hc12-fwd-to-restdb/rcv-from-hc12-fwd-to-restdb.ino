@@ -9,7 +9,8 @@
 // libraries
 
 #include <SPI.h>
-#include <WiFi101.h>
+// #include <WiFi101.h> // For MKR1000
+#include <WiFiNINA.h>
 #include <WiFiUdp.h>
 #include <ArduinoHttpClient.h>
 #include <Arduino_JSON.h>
@@ -64,8 +65,8 @@ byte packetBuffer[NTP_PACKET_SIZE];    //buffer to hold incoming and outgoing pa
 WiFiUDP Udp;                           // A UDP instance to let us send and receive packets over UDP
 
 unsigned long sendData = 0;     // next time we'll send data
-unsigned long SEND_WAIT = 1800; // how long to wait between submissions -- 3600 = 1h
-unsigned long LOOP_WAIT_MS = 5000;  // how long to wait between loops -- 5000 ms = 5 sec
+unsigned long SEND_WAIT = 10; // how long to wait between submissions -- 3600 = 1h
+unsigned long LOOP_WAIT_MS = 500;  // how long to wait between loops -- 5000 ms = 5 sec
 unsigned long lastLoopMillis = 0; // time of last loop execution
 
 void setup()
@@ -169,7 +170,7 @@ void loop()
           Serial.print("Gathered sample (#" + String(sampleNo) + ") at ");
           Serial.print(formatDateTime(ticktime) + "\n");
           Serial.println("Sending data at " + formatDateTime(sendData));
-          printWifiStatus();
+          //printWifiStatus();
           Watchdog.reset();
           JSONVar sample;
           char buf[sizeof(readBuffer)];
@@ -178,9 +179,10 @@ void loop()
           char *str;
           int i = 0;
           bool validSample = false;
+          bool validTemp = false;
           double thisTemp = 0.0;
           Watchdog.reset();
-          while ((str = strtok_r(p, ";", &p)) != NULL) // delimiter is the semicolon
+          while ((str = strtok_r(p, ";", &p)) != NULL && i < 2) // delimiter is the semicolon
           {
             char *end;
             double val = strtod(str, &end);
@@ -188,11 +190,14 @@ void loop()
               if(i == 0) 
               {
                 sample["temperature"] = String(val);
-                validSample = true;
+                validTemp = true;
                 thisTemp = val;
               } else if (i == 1) 
               {
                 sample["voltage"] = String(val);
+                if(validTemp) { // we have both temp and voltage -- likely a good read
+                  validSample = true;
+                }
               } else 
               {
                 Serial.println("Extra data received [" + String(i) + "]: " + String(str));
@@ -203,36 +208,40 @@ void loop()
             
             i++;
           }
-          if(sampleNo > 0 && validSample) {
+          if(sampleNo > 0 && validSample) { // only check temp diff from second sample forward
             if(abs(thisTemp-lastTemp) > 10.0) {
               // Temp diff is too large, likely a measurement or transmission error
+              Serial.println("New temp (" + String(thisTemp) + ") is too different from last temp (" + String(lastTemp) + ") - discarding...");
               validSample = false;
-            } else {
-              lastTemp = thisTemp;
-            }
+            } 
           }
           // If we got a valid temperature, and it survived the diff check above, store it...
           if(validSample) {
+            lastTemp = thisTemp;
             sample["time"] = formatDateTime(ticktime);
             tempValues[sampleNo] = sample;
+
+            // Write response to radio
+            Watchdog.reset();
+            Serial.println("Sending ACK back");
+            setRadioMode(radioWakeupMode);
+            int radioReady  = digitalRead(auxPin);
+            time_t looptime = now() + (time_t)10; // max 10s wait
+            while(radioReady == LOW && now() < looptime) {
+              Serial.print(".");
+              delay(100);
+              radioReady = digitalRead(auxPin);
+            }
+            Serial1.print("ACK");
+            delay(250);
+            Serial.println("Sent ACK");
+            setRadioMode(radioPowerSavingMode);
+            
+          } else {
+            Serial.println("Sample #" + String(sampleNo) + " discarded");
           }
           readBuffer = "";
           Watchdog.reset();
-
-          // Write response to radio
-          Serial.println("Sending ACK back");
-          setRadioMode(radioWakeupMode);
-          /*int radioReady  = digitalRead(auxPin);
-          while(radioReady == LOW) {
-            Serial.print(".");
-            delay(100);
-            radioReady = digitalRead(auxPin);
-          }*/
-          String ack = "ACK " + repeatedString(".", 250);
-          Serial1.print(ack);
-          delay(250);
-          Serial.println("Sent ACK");
-          setRadioMode(radioPowerSavingMode);
       }
   
       if (ticktime > sendData && tempValues.length() > 0)
@@ -338,6 +347,7 @@ String repeatedString(String input, int count) {
   while(count-- > 0) {
     output += input;
   }
+  return output;
 }
 
 void updateTimeKeeper()
@@ -464,6 +474,7 @@ void connectToWiFi() {
     while(WiFi.status() != WL_CONNECTED && now() < looptime) 
     {
       Serial.print(".");
+      Serial.flush();
       delay(200);
     }
     status = WiFi.status();

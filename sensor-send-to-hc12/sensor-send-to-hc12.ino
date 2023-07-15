@@ -155,13 +155,20 @@ void sendDataNow()
         Serial.println("Sent, waiting for reply...");
 
         Watchdog.reset();
-        
-        delay(250); // wait for Remote Radio to reply
+
+        int radioReady  = digitalRead(auxPin);
+        time_t looptime = now() + (time_t)10; // max 10s wait
+        while(radioReady == LOW && now() < looptime) {
+          Serial.print(".");
+          delay(50);
+          radioReady = digitalRead(auxPin);
+        }
+        //delay(250); // wait for Remote Radio to reply
         setRadioMode(radioPowerSavingMode);
     
         // read data back from Radio
         Watchdog.reset();
-        time_t looptime = now() + (time_t)10; // max 10s wait
+        looptime = now() + (time_t)10; // max 10s wait
         while(!Serial1.available() && now() < looptime) 
         {
           Serial.println("now:" + formatDateTime(now()) + ", looptime:" + formatDateTime(looptime));
@@ -197,6 +204,7 @@ void sendDataNow()
         } else {
           Serial.println("Could not receive response!");
         }
+        setRadioMode(radioPowerSavingMode);
         Serial.println("Waiting until " + formatDateTime(sendData) + " to send data again");
     }
 }
